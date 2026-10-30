@@ -1,0 +1,16 @@
+node_modules/
+dist/
+public/vendor/
+android/.gradle/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore
+*.p12
+*.apk
+*.aab
+.env*
+!.env.example
+playwright-report/
+test-results/
+*.tsbuildinfo

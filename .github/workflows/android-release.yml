@@ -1,0 +1,91 @@
+name: Android release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example v1.0.0)"
+        required: true
+        default: v1.0.0
+permissions:
+  contents: write
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install dependencies and test
+        run: npm ci && npm test
+      - name: Build shared web app and synchronize Android
+        run: npm run build && npx cap sync android
+        env:
+          VITE_GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Decode signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" || { echo 'Configure all four ANDROID signing secrets before releasing.'; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/circuitvision-release.jks"
+          chmod 600 "$RUNNER_TEMP/circuitvision-release.jks"
+      - name: Build signed APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/circuitvision-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use a vMAJOR.MINOR.PATCH tag.'; exit 1; }
+          VERSION_NAME="${RELEASE_TAG#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION_NAME"
+          test "$MAJOR" -lt 2000 && test "$MINOR" -lt 1000 && test "$PATCH" -lt 1000
+          VERSION_CODE=$((10#$MAJOR * 1000000 + 10#$MINOR * 1000 + 10#$PATCH))
+          export VERSION_NAME VERSION_CODE
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../CircuitVision.apk
+      - name: Verify APK signature and checksum
+        run: |
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs CircuitVision.apk
+          sha256sum CircuitVision.apk > CircuitVision.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CircuitVision-Android
+          path: |
+            CircuitVision.apk
+            CircuitVision.apk.sha256
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" CircuitVision.apk CircuitVision.apk.sha256 --clobber
+          else
+            gh release create "$RELEASE_TAG" CircuitVision.apk CircuitVision.apk.sha256 --verify-tag --title "CircuitVision $RELEASE_TAG" --notes-file RELEASE_NOTES.md
+          fi
+      - name: Remove runner signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/circuitvision-release.jks"

@@ -1,0 +1,39 @@
+{
+  "name": "circuitvision",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node scripts/vendor.mjs && tsc -b && vite build && node scripts/sw.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "android": "npm run build && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/camera": "^7.0.0",
+    "@capacitor/core": "^7.4.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
+    "@techstark/opencv-js": "4.12.0-release.1",
+    "@tesseract.js-data/eng": "1.0.0",
+    "idb": "^8.0.3",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-zoom-pan-pinch": "^3.7.0",
+    "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "~5.8.3",
+    "vite": "^6.4.1"
+  }
+}
